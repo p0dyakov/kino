@@ -1,0 +1,73 @@
+{
+  "name": "kino",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "portless run next dev",
+    "dev:plain": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.9.0",
+    "@daypicker/react": "~10.0.2",
+    "@fast-link/next": "^0.0.2",
+    "@gsap/react": "^2.1.2",
+    "@json-render/core": "^0.23.2",
+    "@paper-design/shaders-react": "^0.0.82",
+    "@radix-ui/react-scroll-area": "^1.4.0",
+    "@radix-ui/react-slot": "^1.5.0",
+    "@radix-ui/react-tooltip": "^1.4.1",
+    "@tanstack/react-table": "^8.21.3",
+    "@ui-sdk/core": "^0.1.0-beta.13",
+    "@ui-sdk/react": "^0.1.0-beta.13",
+    "@vgpu/core": "^0.6.0",
+    "aicss": "^1.0.1",
+    "border-beam": "^1.4.1",
+    "bot-avatars": "^0.2.2",
+    "class-variance-authority": "^0.7.1",
+    "cn": "^0.5.2",
+    "distortion-waves": "^0.1.0",
+    "geist": "^1.9.2",
+    "gsap": "^3.15.1",
+    "img-fx": "^0.5.1",
+    "lucide-react": "^1.76.0",
+    "motion": "^14.14.0",
+    "next": "16.4.6",
+    "pdfjs-dist": "^6.5.438",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-use-measure": "^2.1.7",
+    "shadcn": "^4.23.0",
+    "shadow-plugin": "^2.1.1",
+    "thinking-orbs": "^0.3.2",
+    "torph": "^0.1.4",
+    "transitions-dev": "^0.3.0",
+    "tw-animate-css": "^1.4.0",
+    "voice-glow": "^0.5.0",
+    "voice-ring": "^0.2.0",
+    "wterm": "^0.0.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/turbopack": "4.3.3",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "agentation": "^3.1.2",
+    "eslint": "^9",
+    "eslint-config-next": "16.4.6",
+    "react-grab": "^0.2.0",
+    "tailwindcss": "4.3.3",
+    "typescript": "^5"
+  },
+  "packageManager": "bun@1.4.4",
+  "ignoreScripts": [
+    "sharp",
+    "unrs-resolver"
+  ],
+  "trustedDependencies": [
+    "sharp",
+    "unrs-resolver"
+  ]
+}

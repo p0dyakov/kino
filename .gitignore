@@ -1,0 +1,43 @@
+# macOS
+.DS_Store
+*.pem
+
+# build output
+Kinostream.app
+engine/build/
+engine/ui/
+app/node_modules/
+app/.next/
+app/out/
+app/build/
+app/coverage/
+*.tsbuildinfo
+app/next-env.d.ts
+
+# deps
+app/.pnp.*
+app/.yarn/*
+!app/.yarn/patches
+!app/.yarn/plugins
+!app/.yarn/releases
+!app/.yarn/versions
+
+# env & local secrets
+.env*
+engine/xray-torrent.json
+.wrangler/
+*-account.json
+
+# scratch / fixtures
+tmp/
+
+# docs
+README.md
+AGENTS.md
+docs/
+
+# vercel
+.vercel
+
+# logs
+*-debug.log*
