@@ -29,6 +29,7 @@ export class MsePlayer {
   private contTimer?: ReturnType<typeof setTimeout>;
   private stallRetries = 0;
   private pendingOffset: number | null = null;
+  private lastEvict = 0;
   private evLog: { t: number; ev: string; ct: number }[] = [];
 
   constructor(
@@ -109,6 +110,7 @@ export class MsePlayer {
 
   private pump() {
     if (this.destroyed || !this.sb || this.sb.updating) return;
+    if (this.evictBehind()) return;
     const chunk = this.queue[0];
     if (!chunk) {
       if (this.ended) this.continueAtFrontier();
@@ -145,6 +147,25 @@ export class MsePlayer {
       clearTimeout(this.retryTimer);
       this.retryTimer = setTimeout(() => this.pump(), 400);
     }
+  }
+
+  // The SourceBuffer retains every appended range until WebKit's own quota
+  // (~1.5 GB) forces a purge — on 4K REMUX that alone balloons WebContent into
+  // jetsam territory (seen: 1.6 GB footprint, white screen). Evict media that
+  // is far behind the playhead; a short back-buffer stays for quick rewinds.
+  private evictBehind(): boolean {
+    const now = performance.now();
+    if (now - this.lastEvict < 4000 || this.pendingSeek != null) return false;
+    const v = this.video, b = v.buffered, sb = this.sb;
+    if (!sb || sb.updating || b.length === 0) return false;
+    const keep = Math.max(0, v.currentTime - 20);
+    const start = b.start(0);
+    if (start >= keep) return false;
+    this.lastEvict = now;
+    try {
+      sb.remove(start, Math.min(keep, b.end(b.length - 1)));
+      return true;
+    } catch { return false; }
   }
 
   private bufferedAhead() {

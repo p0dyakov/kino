@@ -12,7 +12,9 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/ui"
 cat > "$APP/Contents/MacOS/Kinostream" <<'EOF'
 #!/bin/bash
 cd "$(dirname "$0")/../Resources"
-exec ../MacOS/ksengine --app --ui "$PWD/ui"
+LOG="$HOME/Library/Caches/kinostream/engine.log"
+[ -f "$LOG" ] && mv "$LOG" "$LOG.prev"
+exec ../MacOS/ksengine --app --ui "$PWD/ui" 2>>"$LOG"
 EOF
 chmod +x "$APP/Contents/MacOS/Kinostream"
 

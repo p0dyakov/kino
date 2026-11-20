@@ -50,6 +50,12 @@
     return YES;
 }
 
+// jetsam kills the web process under memory pressure — without this the view
+// just stays a dead white surface forever
+- (void)webViewWebContentProcessDidTerminate:(WKWebView*)webView {
+    [webView reload];
+}
+
 - (void)userContentController:(WKUserContentController*)uc didReceiveScriptMessage:(WKScriptMessage*)msg {
     NSString* action = [msg.body isKindOfClass:[NSDictionary class]] ? msg.body[@"action"]
                      : [msg.body isKindOfClass:[NSString class]] ? msg.body : nil;
