@@ -749,7 +749,34 @@ bool Engine::waitMetadata(const std::shared_ptr<StreamSession>& s, int timeoutSe
 }
 
 void Engine::alertLoop() {
+    bool draining = false;
+    int drainPending = 0;
+    int64_t drainStart = 0;
+    int64_t lastResumeAll = nowUs();
     while (running_) {
+        // graceful quit (SIGTERM/SIGINT): flush resume data for every
+        // torrent, then die — partial progress must survive app restarts
+        if (quitRequested_.load() && !draining) {
+            draining = true;
+            drainStart = nowUs();
+            std::lock_guard<std::mutex> lk(mtx_);
+            for (auto& [id, s] : sessions_) {
+                if (!s->handle.is_valid()) continue;
+                requestResumeSave(s);
+                ++drainPending;
+            }
+            if (!drainPending) break;
+        }
+        if (draining && nowUs() - drainStart > 4000000LL) break;
+        // periodic resume save — a kill/power loss then only costs
+        // the last minute of progress, not the whole session
+        if (!draining && nowUs() - lastResumeAll > 60000000LL) {
+            lastResumeAll = nowUs();
+            std::lock_guard<std::mutex> lk(mtx_);
+            for (auto& [id, s] : sessions_)
+                if (s->metadataReady && s->handle.is_valid())
+                    requestResumeSave(s);
+        }
         if (!ses_.wait_for_alert(lt::milliseconds(500))) {
             // tick: metadata may arrive via resume data / torrent_info
             // without a metadata_received alert — catch that here
@@ -821,6 +848,7 @@ void Engine::alertLoop() {
                     std::ofstream of(resumePath(hash), std::ios::binary | std::ios::trunc);
                     of.write(buf.data(), buf.size());
                 } catch (...) {}
+                if (draining && --drainPending <= 0) { running_ = false; break; }
             } else if (lt::alert_cast<lt::torrent_finished_alert>(a)) {
                 if (s) requestResumeSave(s);
             }
@@ -852,6 +880,11 @@ void Engine::alertLoop() {
                 }
             }
         }
+    }
+    if (draining || quitRequested_.load()) {
+        // resume files are already on disk — skip destructors, die now
+        try { ses_.abort(); } catch (...) {}
+        ::_exit(0);
     }
 }
 

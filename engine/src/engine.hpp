@@ -145,6 +145,9 @@ public:
     // local socks proxy up so enableProxy() can route through it
     std::function<void()> spawnProxy_;
 
+    // signal-safe: sets a flag the alert thread drains into resume saves
+    void requestQuit() { quitRequested_.store(1); }
+
 private:
     void alertLoop();
     void onMetadata(const std::shared_ptr<StreamSession>& s);
@@ -175,6 +178,7 @@ private:
     std::mutex mirrorMtx_;
     std::condition_variable mirrorCv_;
     std::atomic<bool> running_{true};
+    std::atomic<int> quitRequested_{0};
     bool verbose_ = false;
     int port_ = 0;
 };

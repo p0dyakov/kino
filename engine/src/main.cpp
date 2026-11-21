@@ -29,9 +29,12 @@ static ks::Engine* g_engine = nullptr;
 static httplib::Server* g_server = nullptr;
 
 static void onSignal(int) {
+    // alert thread drains save_resume_data for every session, then exits —
+    // _exit here raced the async save and wiped partial download progress
     if (g_server) g_server->stop();
-    if (g_engine) g_engine->stopAll();
-    _exit(0);
+    if (g_engine) g_engine->requestQuit();
+    // if the drain thread somehow wedges, die anyway in 6s
+    alarm(6);
 }
 
 static void setCors(httplib::Response& res) {
