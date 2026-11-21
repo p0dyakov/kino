@@ -665,6 +665,12 @@ int main(int argc, char** argv) {
     printf("ksengine: http://%s:%d (ui=%s)\n", host.c_str(), port, uiDir.c_str());
     fflush(stdout);
 
+    // let local tools (mcp, cli) find the api without port scanning
+    {
+        std::ofstream pf(engine.cacheDir() + "/engine.port", std::ios::trunc);
+        if (pf) pf << port << "\n";
+    }
+
 #ifdef __APPLE__
     if (appMode) {
         std::thread([&] { svr.listen_after_bind(); }).detach();
