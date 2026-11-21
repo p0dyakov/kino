@@ -393,7 +393,11 @@ bool Transmuxer::produce(double t, int audioIdx,
                 if (r < 0) return false;
                 av_packet_rescale_ts(audioPacket, pipe_.enc->time_base, aout->time_base);
                 audioPacket->stream_index = aout->index;
-                if (av_interleaved_write_frame(ofmt, audioPacket) < 0) return false;
+                // av_write_frame, not interleaved: under frag_every_frame the
+                // interleaver stamps every second audio fragment with the
+                // previous fragment's tfdt — MSE then plays overlapping
+                // ranges and the audio crackles
+                if (av_write_frame(ofmt, audioPacket) < 0) return false;
             }
         };
         const auto encodeFifo = [&](bool flush) {
@@ -472,13 +476,13 @@ bool Transmuxer::produce(double t, int audioIdx,
                 pkt->duration = av_rescale_q(pkt->duration, inVtb, outVtb);
                 pkt->pos = -1;
                 pkt->stream_index = vout->index;
-                av_interleaved_write_frame(ofmt, pkt);
+                av_write_frame(ofmt, pkt);
             } else if (ain && pkt->stream_index == aIn) {
                 if (audioCopy) {
                     av_packet_rescale_ts(pkt, inAtb, aout->time_base);
                     pkt->pos = -1;
                     pkt->stream_index = aout->index;
-                    av_interleaved_write_frame(ofmt, pkt);
+                    av_write_frame(ofmt, pkt);
                 } else if (avcodec_send_packet(pipe_.dec, pkt) != 0 || !drainDecoder()) {
                     if (!cancelled_.load())
                         fprintf(stderr, "transmux: audio conversion failed\n");
