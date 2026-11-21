@@ -148,15 +148,25 @@ std::vector<Peer> httpAnnounce(const std::string& url,
     base += "info_hash=" + enc(infoHash) + "&peer_id=" + enc(peerId)
           + "&port=6881&uploaded=0&downloaded=0&left=1099511627776&compact=1&event=started&numwant=200";
 
+    // the local xray http proxy is the preferred path: its near leg is
+    // loopback (immune to vpn flaps) and the far leg rides the vless exit,
+    // while the isp edge drops tracker http on the physical interface
     std::string body;
+    auto get = [&](auto& cli) {
+        cli.set_connection_timeout(3, 0); cli.set_read_timeout(5, 0);
+        if (auto r = cli.Get(base.c_str()); r && r->status == 200)
+            body = std::move(r->body);
+    };
     if (scheme == "https") {
         httplib::SSLClient cli(hostport);
-        cli.set_connection_timeout(3, 0); cli.set_read_timeout(5, 0);
-        if (auto r = cli.Get(base.c_str()); r && r->status == 200) body = std::move(r->body);
+        cli.set_proxy("127.0.0.1", 12081);
+        get(cli);
+        if (body.empty()) { httplib::SSLClient direct(hostport); get(direct); }
     } else {
         httplib::Client cli(hostport);
-        cli.set_connection_timeout(3, 0); cli.set_read_timeout(5, 0);
-        if (auto r = cli.Get(base.c_str()); r && r->status == 200) body = std::move(r->body);
+        cli.set_proxy("127.0.0.1", 12081);
+        get(cli);
+        if (body.empty()) { httplib::Client direct(hostport); get(direct); }
     }
     if (body.empty()) return {};
 
@@ -281,6 +291,10 @@ static lt::settings_pack makeSettings() {
     // the physical nic is dropped by the isp — but unbound udp rides the
     // tunnel's relay and reaches everything. so peers go over uTP on the
     // default-route udp socket.
+    // NOTE: every relay-wrapped peer is 127.0.0.1 on a distinct port —
+    // without multiple-per-ip libtorrent collapses the whole relay pool
+    // to a single connection.
+    pack.set_bool(lt::settings_pack::allow_multiple_connections_per_ip, true);
     pack.set_bool(lt::settings_pack::enable_outgoing_utp, true);
     pack.set_bool(lt::settings_pack::enable_incoming_utp, true);
     pack.set_bool(lt::settings_pack::enable_outgoing_tcp, false);
@@ -580,17 +594,24 @@ void Engine::boostPeers(std::shared_ptr<StreamSession> s,
 
     std::unordered_set<std::string> seen;
     std::atomic<int> injected{0};
-    // bring the udp relay up once — international peers are only reachable
-    // through the vless tunnel, domestic ones still get direct connects
-    if (!relay_) {
-        auto r = std::make_unique<PeerRelay>();
-        if (r->start(12080)) {
-            relay_ = std::move(r);
-            fprintf(stderr, "ksengine: peer relay up via xray udp associate\n");
-        } else {
-            fprintf(stderr, "ksengine: no xray socks — relay off\n");
+    // bring the udp relay up — international peers only reach us through the
+    // vless tunnel, domestic peers still get direct connects. xray is spawned
+    // lazily on first use; the associate is retried every pass so a proxy
+    // that comes up late (or dies and respawns) is picked up mid-session.
+    auto ensureRelay = [&]() -> std::shared_ptr<PeerRelay> {
+        {
+            std::lock_guard<std::mutex> lk(relayMtx_);
+            if (relay_ && relay_->active()) return relay_;
         }
-    }
+        static std::once_flag xrayOnce;
+        std::call_once(xrayOnce, [&] { if (spawnProxy_) spawnProxy_(); });
+        auto r = std::make_shared<PeerRelay>();
+        if (!r->start(12080)) return nullptr;
+        fprintf(stderr, "ksengine: peer relay up via xray udp associate\n");
+        std::lock_guard<std::mutex> lk(relayMtx_);
+        relay_ = r;
+        return r;
+    };
     // outbound uTP is dpi-blocked on the isp edge — inbound connects are the
     // working path, and they only find us while trackers keep our public
     // endpoint fresh: re-announce the whole pass every 45s until saturated
@@ -598,6 +619,11 @@ void Engine::boostPeers(std::shared_ptr<StreamSession> s,
     // serialize the whole pass behind its timeout
     std::mutex seenMtx;
     auto inject = [&](const std::vector<Peer>& peers) {
+        std::shared_ptr<PeerRelay> rl;
+        {
+            std::lock_guard<std::mutex> lk(relayMtx_);
+            rl = relay_;
+        }
         for (auto& [ip, port] : peers) {
             if (port <= 1) continue;
             {
@@ -611,10 +637,10 @@ void Engine::boostPeers(std::shared_ptr<StreamSession> s,
                 // direct first — works for domestic peers and punches a
                 // nat hole; plus a relayed path for everyone else
                 s->handle.connect_peer(lt::tcp::endpoint(addr, port));
-                if (relay_ && relay_->active()) {
+                if (rl && rl->active()) {
                     in_addr ia{};
                     if (::inet_pton(AF_INET, ip.c_str(), &ia) == 1) {
-                        uint16_t lp = relay_->wrap(ia.s_addr, port);
+                        uint16_t lp = rl->wrap(ia.s_addr, port);
                         if (lp) s->handle.connect_peer(lt::tcp::endpoint(
                             lt::make_address("127.0.0.1"), lp));
                     }
@@ -625,7 +651,14 @@ void Engine::boostPeers(std::shared_ptr<StreamSession> s,
         }
     };
 
-    for (int pass = 0; pass < 20 && !s->dead.load(); ++pass) {
+    // ~30min of passes: the tunnel flaps, so a pass that yields nothing now
+    // may harvest a full swarm a minute later
+    bool relayWarned = false;
+    for (int pass = 0; pass < 40 && !s->dead.load(); ++pass) {
+        if (!ensureRelay() && !relayWarned) {
+            relayWarned = true;
+            fprintf(stderr, "ksengine: no xray socks — relay off\n");
+        }
         std::vector<std::thread> workers;
         workers.reserve(trackers.size());
         for (const std::string& url : trackers) {

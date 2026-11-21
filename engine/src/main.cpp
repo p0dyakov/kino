@@ -5,6 +5,7 @@
 #include <mutex>
 #include <netdb.h>
 #include <signal.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -201,6 +202,15 @@ static void ensureTorrentProxy() {
 }
 
 int main(int argc, char** argv) {
+    // p2p eats descriptors — libtorrent sockets plus one relay channel per
+    // peer blow through launchd's 256 soft cap; then dnssd, accept() and the
+    // whole api die with EMFILE. raise it while the hard limit allows.
+    struct rlimit rl{};
+    if (getrlimit(RLIMIT_NOFILE, &rl) == 0 && rl.rlim_cur < 8192) {
+        rlim_t hard = rl.rlim_max;
+        rl.rlim_cur = hard == RLIM_INFINITY || hard > 8192 ? 8192 : hard;
+        setrlimit(RLIMIT_NOFILE, &rl);
+    }
     std::string uiDir = "ui";
     std::string host = "127.0.0.1";
     int port = 0;

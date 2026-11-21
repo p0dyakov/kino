@@ -161,7 +161,8 @@ private:
     void mirrorLoop();
 
     lt::session ses_;
-    std::unique_ptr<PeerRelay> relay_;
+    std::shared_ptr<PeerRelay> relay_;
+    std::mutex relayMtx_;
     std::string cacheDir_;
     std::atomic<bool> proxyOn_{false};
     std::mutex mtx_;
